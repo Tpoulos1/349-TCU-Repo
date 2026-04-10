@@ -62,7 +62,7 @@ void setup(){
     pinMode(SyncIN, INPUT);
     pinmode(SyncOUT, OUTPUT);
 
-    Timer1.initialize(1000);
+    Timer1.initialize(1);
     Timer1.attachInterrupt(onTick);
 
     attachInterrupt(digitalPinToInterrupt(SyncIN), onSyncReceived, RISING);
