@@ -16,6 +16,10 @@
 
 int controller_sel = 0;// used to decide if this TCU is the controller or peripheral
 
+//INSERT SPECIFIC FUNCTION ID FOR THE FUNCTIONS
+//Everything else before that is the same for each function
+//Turn module on, set phase to 0, set antenna to 0. (13 bits)
+
 // CLOCK CONFIG ---- 
 
 // volatile because to have accurate timing you need the cpu to not optimize it
