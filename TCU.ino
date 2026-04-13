@@ -5,14 +5,30 @@
 
 // define specific pin numbers later &&
 
-#define SPI1 1// Serial clock
-#define SPI2 2// Master out Slave in
-#define SPI3 3// Master in Slave out
-
 #define GPIO 4// Sync pin for SPI
 
 #define SyncIN 5
 #define SyncOUT 6
+
+
+void sendFrame(long funcID) {
+    SPI.beginTransaction(SPISettings(15625, MSBFIRST, SPI_MODE0));
+    digitalWrite(GPIO, LOW);
+    SPI.transfer(0x00);   // bits 0-7
+    SPI.transfer(0x00);   // bits 8-12 
+    digitalWrite(GPIO, HIGH);
+    SPI.endTransaction();
+
+    configBits = 0b11101;
+    // Pack 5 bits into 1 byte, MSB-aligned: [b4 b3 b2 b1 b0 x x x]
+    uint8_t payload = (configBits & 0x1F) << 3;
+
+    SPI.beginTransaction(SPISettings(19531, MSBFIRST, SPI_MODE0));
+    digitalWrite(GPIO, LOW);
+    SPI.transfer(payload);  // 5 meaningful bits, 3 padding zeros at end
+    digitalWrite(GPIO, HIGH);
+    SPI.endTransaction();
+}
 
 int controller_sel = 0;// used to decide if this TCU is the controller or peripheral
 
@@ -69,6 +85,8 @@ void setup(){
     Timer1.initialize(1);
     Timer1.attachInterrupt(onTick);
 
+    SPI.begin();
+
     attachInterrupt(digitalPinToInterrupt(SyncIN), onSyncReceived, RISING);
 
     if(controller_sel){
@@ -77,5 +95,5 @@ void setup(){
 }
 
 void loop(){
-
+    sendFrame(long 0b0011001);
 }
