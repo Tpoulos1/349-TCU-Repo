@@ -1,33 +1,23 @@
 // TCU Project
-
 #include <SPI.h>
 #include <TimerOne.h>
 
 // define specific pin numbers later &&
 
-#define GPIO 4// Sync pin for SPI
-
+#define GPIO 4 //spi chip select
+#define STROBE 7
 #define SyncIN 5
 #define SyncOUT 6
 
 
-void sendFrame(long funcID) {
+void sendFrame(uint8_t DATA) { 
+    digitalWrite(STROBE,HIGH);
     SPI.beginTransaction(SPISettings(15625, MSBFIRST, SPI_MODE0));
     digitalWrite(GPIO, LOW);
-    SPI.transfer(0x00);   // bits 0-7
-    SPI.transfer(0x00);   // bits 8-12 
+    SPI.transfer(DATA);
     digitalWrite(GPIO, HIGH);
     SPI.endTransaction();
-
-    configBits = 0b11101;
-    // Pack 5 bits into 1 byte, MSB-aligned: [b4 b3 b2 b1 b0 x x x]
-    uint8_t payload = (configBits & 0x1F) << 3;
-
-    SPI.beginTransaction(SPISettings(19531, MSBFIRST, SPI_MODE0));
-    digitalWrite(GPIO, LOW);
-    SPI.transfer(payload);  // 5 meaningful bits, 3 padding zeros at end
-    digitalWrite(GPIO, HIGH);
-    SPI.endTransaction();
+    digitalWrite(STROBE,LOW);
 }
 
 int controller_sel = 0;// used to decide if this TCU is the controller or peripheral
@@ -40,6 +30,7 @@ int controller_sel = 0;// used to decide if this TCU is the controller or periph
 
 // volatile because to have accurate timing you need the cpu to not optimize it
 volatile unsigned long ticks = 0;
+unsigned long lastSlot = 0;
 
 // used for the Attatchinterupt function
 void onTick() {
@@ -62,8 +53,9 @@ void onSyncReceived() {
 }
 
 void sendSync() {
-    sequenceStart = ticks;       
-    digitalWrite(SyncOUT, HIGH); 
+    sequenceStart = ticks;
+    digitalWrite(SyncOUT, HIGH);
+    delayMicroseconds(10);      // wide enough for peripheral to catch it
     digitalWrite(SyncOUT, LOW);
 }
 
@@ -73,14 +65,15 @@ void setup(){
 
     Serial.begin(38400); // baud rate subject to change &&
 
-    pinMode(SPI1, OUTPUT);
-    pinMode(SPI2, OUTPUT);
-    pinMode(SPI3, INPUT);
 
     pinMode(GPIO, OUTPUT);
-
+    pinMode(STROBE,OUTPUT);
     pinMode(SyncIN, INPUT);
-    pinmode(SyncOUT, OUTPUT);
+    pinMode(SyncOUT, OUTPUT);
+
+    digitalWrite(GPIO,HIGH);
+    digitalWrite(STROBE,LOW);
+    
 
     Timer1.initialize(1);
     Timer1.attachInterrupt(onTick);
@@ -95,5 +88,18 @@ void setup(){
 }
 
 void loop(){
-    sendFrame(long 0b0011001);
+    unsigned long now = getTime();
+    unsigned long elapsed  = now - sequenceStart;
+    unsigned long thisSlot = elapsed / 64;  
+
+    if (thisSlot > lastSlot) {
+        lastSlot = thisSlot;
+        sendFrame(0x00);        // fires once per slot, locked to sequenceStart
+    }
+
+    // controller re-syncs periodically so clocks don't drift
+    if (controller_sel && elapsed > 10000) {  
+        sendSync();
+        lastSlot = 0;
+    }
 }
