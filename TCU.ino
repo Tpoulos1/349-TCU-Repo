@@ -10,6 +10,8 @@
 #define SyncOUT 6
 
 
+
+
 void sendFrame(uint8_t DATA) { 
     digitalWrite(STROBE,HIGH);
     SPI.beginTransaction(SPISettings(15625, MSBFIRST, SPI_MODE0));
@@ -87,14 +89,26 @@ void setup(){
     }
 }
 
+uint8_t preamble(){
+    if(getTime() <= ){ // .768   
+        return 0x00;
+    }
+    if(getTime() <= ){ // .864
+        return 0x00
+    } 
+}
+
 void loop(){
     unsigned long now = getTime();
     unsigned long elapsed  = now - sequenceStart;
-    unsigned long thisSlot = elapsed / 64;  
+    unsigned long thisSlot = elapsed / 64;
+    uint8_t frame = 0x0;
+
+    frame = preamble()
 
     if (thisSlot > lastSlot) {
         lastSlot = thisSlot;
-        sendFrame(0x00);        // fires once per slot, locked to sequenceStart
+        sendFrame(frame);        // fires once per slot, locked to sequenceStart
     }
 
     // controller re-syncs periodically so clocks don't drift
