@@ -3,10 +3,10 @@
 
 // define specific pin numbers later &&
 
-#define GPIO 4 //spi chip select
-#define STROBE 7
-#define SyncIN 5
-#define SyncOUT 6
+#define CHIP_SEL    10   // SPI chip select 
+#define STROBE   9 
+#define SyncIN  11  
+#define SyncOUT 12 
 
 // Timing (when everything is gonna happen)
 #define PREAMBLE_US    1600UL
@@ -17,6 +17,34 @@
 #define SEQ2_DUR_US    66800UL
 
 #define EL2_OFFSET_US  30000UL  // middle EL — change when known &&
+
+#define MODE_EL  0
+#define MODE_AZ  1
+#define MODE_BAZ 2
+
+#define TOFRO   (1 << 5)
+#define SBSTART (1 << 4)
+#define TXEN    (1 << 7)
+
+int currentMode = MODE_EL;  // change this to switch&&
+
+const unsigned long AZ_SPECIAL_STROBES_US[] = {
+    8760,   // PAUSE
+    9360,   // FRO SCAN
+    15900   // END
+};
+#define AZ_SPECIAL_COUNT 3
+
+int azStrobeIdx = 0;
+
+const unsigned long EL_SPECIAL_STROBES_US[] = {
+    3406,   // PAUSE start
+    3806,   // FRO SCAN
+    5600    // END
+};
+#define EL_SPECIAL_COUNT 3
+
+int elStrobeIdx = 0;
 
 // full cycle = 16 steps (8 SEQs + 8 gaps) struct to store if we are in a seq or not
 struct Step {
@@ -48,42 +76,81 @@ const Step CYCLE[] = {
 
 int currentStep = 0; // which step of the cycle your in
 
-bool k = 0; // k constant subject to change &&
-const uint8_t DPSK_BARKER[] = {1, 0, 1, 1, 0};
+int k = 1; // k constant subject to change &&
+const uint8_t DPSK_BARKER[] = {1, 1, 1, 0, 1};
 
 // func to send preamble (should be the same at any point)
 uint8_t preamble(unsigned long slot) {
+    uint8_t kBit = (k != 1) ? 0x01 : 0x00;
     uint8_t b = 0x00;
-    if (slot == 0) {
-        b |= (1 << 7);
-        b |= (k & 0x01);
-    } else if (slot >= 13 && slot <= 17) {
+    b |= (1 << 7);
+    b |= kBit;
+    if (slot >= 13 && slot <= 17) {
         b |= (DPSK_BARKER[slot - 13] << 6);
     }
     return b;
 }
 
+uint8_t azData(unsigned long slot) {
+    uint8_t kBit = (k != 1) ? 0x01 : 0x00;
+    const uint8_t ANT_SEQ[] = {0b001, 0b010, 0b011, 0b001, 0b101};
+
+    uint8_t ant;
+    if (slot < 5) {
+        ant = (ANT_SEQ[slot] << 1);
+    } else {
+        ant = (ANT_SEQ[4] << 1);
+    }
+
+    if (slot == 0) {
+        return TXEN | kBit;
+    }
+    if (slot >= 1 && slot <= 6) {
+        return TXEN | ant | kBit;
+    }
+    if (slot >= 7 && slot <= 14) {
+        return TXEN | ant | kBit;
+    }
+    if (slot == 15) {
+        return TXEN | TOFRO | SBSTART | ant | kBit;
+    }
+    if (slot >= 16 && slot < 112) {
+        return TXEN | SBSTART | ant | kBit;
+    }
+    if (slot >= 112 && slot < 121) {
+        return 0x00;
+    }
+    if (slot == 121) {
+        return TXEN | TOFRO | SBSTART | ant | kBit;
+    }
+    if (slot >= 122 && slot < 223) {
+        return TXEN | SBSTART | ant | kBit;
+    }
+    return 0x00;
+}
+
 // where the data is set to what it needs to be set on specific timings
 uint8_t elData(unsigned long slot) {
-    #define TOFRO   (1 << 5)
-    #define SBSTART (1 << 4)
+    uint8_t kBit = (k != 1) ? 0x01 : 0x00;
 
+    if (slot < 4) {
+        return TXEN | kBit;
+    }
     if (slot == 4) {
-        return TOFRO | SBSTART;
+        return TXEN | TOFRO | SBSTART | kBit;
     }
     if (slot >= 5 && slot < 28) {
-        return SBSTART;
+        return TXEN | SBSTART | kBit;
     }
     if (slot >= 28 && slot < 34) {
         return 0x00;
     }
     if (slot == 34) {
-        return TOFRO | SBSTART;
+        return TXEN | TOFRO | SBSTART | kBit;
     }
     if (slot >= 35 && slot < 62) {
-        return SBSTART;
+        return TXEN | SBSTART | kBit;
     }
-
     return 0x00;
 }
 
@@ -92,9 +159,9 @@ bool spiSentForSlot = false; // tracks if SPI has been sent for current slot
 // send the SPI signal with a 1MHz clock
 void sendSPI(uint8_t DATA) {
     SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
-    digitalWrite(GPIO, LOW);
+    digitalWrite(CHIP_SEL, LOW);
     SPI.transfer(DATA);
-    digitalWrite(GPIO, HIGH);
+    digitalWrite(CHIP_SEL, HIGH);
     SPI.endTransaction();
 }
 
@@ -150,12 +217,14 @@ unsigned long elStart(int n) {
 void advancePhase() {
     currentStep = (currentStep + 1) % CYCLE_LEN;
     if (currentStep == 0 && controller_sel) {
-        sendSync(); // resync every full cycle
+        sendSync();
     }
     phaseStart     = getTime();
     lastSlot       = 0;
     activeEL       = -1;
     spiSentForSlot = false;
+    azStrobeIdx    = 0;
+    elStrobeIdx = 0;
 }
 
 unsigned long lastSlot = 0;
@@ -163,12 +232,12 @@ unsigned long lastSlot = 0;
 void setup() {
     Serial.begin(115200);
 
-    pinMode(GPIO,    OUTPUT);
+    pinMode(CHIP_SEL,    OUTPUT);
     pinMode(STROBE,  OUTPUT);
     pinMode(SyncIN,  INPUT);
     pinMode(SyncOUT, OUTPUT);
 
-    digitalWrite(GPIO,   HIGH);
+    digitalWrite(CHIP_SEL,   HIGH);
     digitalWrite(STROBE, LOW);
 
     SPI.begin();
@@ -196,45 +265,84 @@ void loop() {
         return;
     }
 
-    // always run slot timing regardless of gap or seq
     unsigned long thisSlot   = elapsed / 64;
     unsigned long timeInSlot = elapsed % 64;
 
-    uint8_t nextFrame = 0x00; // default but overridden if inside an EL window
+    uint8_t nextFrame = 0x00;
 
     if (CYCLE[currentStep].isSeq) {
-        for (int i = 0; i < 3; i++) {
-            unsigned long start = elStart(i);
-            unsigned long end   = start + EL_TOTAL_US;
+
+        if (currentMode == MODE_EL) {
+            for (int i = 0; i < 3; i++) {
+                unsigned long start = elStart(i);
+                unsigned long end   = start + EL_TOTAL_US;
+
+                if (elapsed >= start && elapsed < end) {
+                    if (activeEL != i) {
+                        activeEL       = i;
+                        lastSlot       = 0;
+                        spiSentForSlot = false;
+                        elStrobeIdx    = 0;
+                    }
+
+                    unsigned long elElapsed  = elapsed - start;
+                    unsigned long elSlot     = elElapsed / 64;
+                    unsigned long nextElSlot = elSlot + 1;
+
+                    if ((nextElSlot * 64) < PREAMBLE_US) {
+                        nextFrame = preamble(nextElSlot);
+                    } else {
+                        nextFrame = elData(nextElSlot - (PREAMBLE_US / 64));
+                    }
+
+                    if (elStrobeIdx < EL_SPECIAL_COUNT) {
+                        if (elElapsed >= EL_SPECIAL_STROBES_US[elStrobeIdx]) {
+                            strobeNow();
+                            elStrobeIdx++;
+                        }
+                    }
+
+                    break;
+                }
+            }
+
+        } else if (currentMode == MODE_AZ) {
+            unsigned long start = 10000UL;
+            unsigned long end   = start + 15900UL;
 
             if (elapsed >= start && elapsed < end) {
-                if (activeEL != i) {
-                    activeEL       = i;
+                if (activeEL != 0) {
+                    activeEL       = 0;
                     lastSlot       = 0;
                     spiSentForSlot = false;
+                    azStrobeIdx    = 0;
                 }
 
-                unsigned long elElapsed  = elapsed - start;
-                unsigned long elSlot     = elElapsed / 64;
-                unsigned long nextElSlot = elSlot + 1;
+                unsigned long azElapsed  = elapsed - start;
+                unsigned long azSlot     = azElapsed / 64;
+                unsigned long nextAzSlot = azSlot + 1;
 
-                if ((nextElSlot * 64) < PREAMBLE_US) {
-                    nextFrame = preamble(nextElSlot);
+                if ((nextAzSlot * 64) < PREAMBLE_US) {
+                    nextFrame = preamble(nextAzSlot);
                 } else {
-                    nextFrame = elData(nextElSlot - (PREAMBLE_US / 64));
+                    nextFrame = azData(nextAzSlot - (PREAMBLE_US / 64));
                 }
-                break;
+
+                if (azStrobeIdx < AZ_SPECIAL_COUNT) {
+                    if (azElapsed >= AZ_SPECIAL_STROBES_US[azStrobeIdx]) {
+                        strobeNow();
+                        azStrobeIdx++;
+                    }
+                }
             }
         }
     }
 
-    // 32µs before slot boundary, send next slot's data
     if (timeInSlot >= 32 && !spiSentForSlot) {
         sendSPI(nextFrame);
         spiSentForSlot = true;
     }
 
-    // at slot boundary, strobe to latch
     if (thisSlot > lastSlot) {
         lastSlot       = thisSlot;
         spiSentForSlot = false;
