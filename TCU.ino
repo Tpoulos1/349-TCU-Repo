@@ -1,6 +1,5 @@
 // TCU Project
 #include <SPI.h>
-#include <TimerOne.h>
 
 // define specific pin numbers later &&
 
@@ -17,11 +16,11 @@
 #define SEQ1_DUR_US    66700UL
 #define SEQ2_DUR_US    66800UL
 
-#define EL2_OFFSET_US  30000UL  // middle EL — change when known&&
+#define EL2_OFFSET_US  30000UL  // middle EL — change when known &&
 
 // full cycle = 16 steps (8 SEQs + 8 gaps) struct to store if we are in a seq or not
 struct Step {
-    bool     isSeq;
+    bool          isSeq;
     unsigned long duration;
 };
 
@@ -53,13 +52,12 @@ bool k = 0; // k constant subject to change &&
 const uint8_t DPSK_BARKER[] = {1, 0, 1, 1, 0};
 
 // func to send preamble (should be the same at any point)
-uint8_t preamble(unsigned long slot){
+uint8_t preamble(unsigned long slot) {
     uint8_t b = 0x00;
-    //
-    if(slot == 0){
+    if (slot == 0) {
         b |= (1 << 7);
         b |= (k & 0x01);
-    }else if(slot >= 13 && slot <= 17){
+    } else if (slot >= 13 && slot <= 17) {
         b |= (DPSK_BARKER[slot - 13] << 6);
     }
     return b;
@@ -89,8 +87,7 @@ uint8_t elData(unsigned long slot) {
     return 0x00;
 }
 
-
-bool spiSentForSlot = false; // variable to define what slot we are using
+bool spiSentForSlot = false; // tracks if SPI has been sent for current slot
 
 // send the SPI signal with a 1MHz clock
 void sendSPI(uint8_t DATA) {
@@ -100,50 +97,33 @@ void sendSPI(uint8_t DATA) {
     digitalWrite(GPIO, HIGH);
     SPI.endTransaction();
 }
+
 // strobe the GPIO to tell them to latch data
 void strobeNow() {
     digitalWrite(STROBE, HIGH);
     digitalWrite(STROBE, LOW);
 }
 
-int controller_sel = 0;// used to decide if this TCU is the controller or peripheral
+int controller_sel = 0; // used to decide if this TCU is the controller or peripheral
 
-//INSERT SPECIFIC FUNCTION ID FOR THE FUNCTIONS
-//Everything else before that is the same for each function
-//Turn module on, set phase to 0, set antenna to 0. (13 bits)
-
-// CLOCK CONFIG ---- 
-
-// volatile because to have accurate timing you need the cpu to not optimize it
-volatile unsigned long ticks = 0;
-unsigned long lastSlot = 0;
-
-// used for the Attatchinterupt function
-void onTick() {
-    ticks++; 
-}
-
-// function to retrieve time without screwing up overall timing
+// returns current time in microseconds
 unsigned long getTime() {
-    noInterrupts();
-    unsigned long t = ticks;
-    interrupts();
-    return t;
+    return micros();
 }
 
 // SYNC IN/OUT LOGIC -----
 volatile unsigned long sequenceStart = 0;
 
-// if we recieve a sync set it up
+// if we receive a sync set it up
 void onSyncReceived() {
-    sequenceStart = ticks;
+    sequenceStart = micros();
 }
 
-// constantly send sync out to anything that might want it
+// send sync out to peripheral
 void sendSync() {
-    sequenceStart = ticks;
+    sequenceStart = micros();
     digitalWrite(SyncOUT, HIGH);
-    delayMicroseconds(10);      // wide enough for peripheral to catch it
+    delayMicroseconds(10);
     digitalWrite(SyncOUT, LOW);
 }
 
@@ -151,25 +131,25 @@ unsigned long phaseStart = 0;
 int activeEL = -1; // -1 is none, 0,1,2 are each el firing in the seq
 
 // lookup for how long current step in long seq should last
-unsigned long PhaseDuration(){
-return CYCLE[currentStep].duration;
+unsigned long PhaseDuration() {
+    return CYCLE[currentStep].duration;
 }
 
 // chooses each of the el sequences to start
-unsigned long elStart(int n, unsigned long seqDur){
-    if(n == 0){
+unsigned long elStart(int n) {
+    if (n == 0) {
         return 0;
     }
-    if(n == 1){
+    if (n == 1) {
         return EL2_OFFSET_US;
     }
-    return seqDur - EL_TOTAL_US;
+    return 54400UL;
 }
 
-// moves to next step on the cycle table and wraps back to zero when
+// moves to next step on the cycle table and wraps back to zero
 void advancePhase() {
     currentStep = (currentStep + 1) % CYCLE_LEN;
-    if (currentStep == 0 && controller_sel){
+    if (currentStep == 0 && controller_sel) {
         sendSync(); // resync every full cycle
     }
     phaseStart     = getTime();
@@ -178,23 +158,18 @@ void advancePhase() {
     spiSentForSlot = false;
 }
 
+unsigned long lastSlot = 0;
 
-void setup(){
+void setup() {
+    Serial.begin(115200);
 
-    Serial.begin(38400); // baud rate subject to change &&
-
-
-    pinMode(GPIO, OUTPUT);
-    pinMode(STROBE,OUTPUT);
-    pinMode(SyncIN, INPUT);
+    pinMode(GPIO,    OUTPUT);
+    pinMode(STROBE,  OUTPUT);
+    pinMode(SyncIN,  INPUT);
     pinMode(SyncOUT, OUTPUT);
 
-    digitalWrite(GPIO,HIGH);
-    digitalWrite(STROBE,LOW);
-    
-
-    Timer1.initialize(1);
-    Timer1.attachInterrupt(onTick);
+    digitalWrite(GPIO,   HIGH);
+    digitalWrite(STROBE, LOW);
 
     SPI.begin();
 
@@ -202,11 +177,10 @@ void setup(){
 
     phaseStart = getTime();
 
-    if(controller_sel){
+    if (controller_sel) {
         sendSync();
     }
 }
-
 
 void loop() {
     unsigned long now     = getTime();
@@ -226,11 +200,11 @@ void loop() {
     unsigned long thisSlot   = elapsed / 64;
     unsigned long timeInSlot = elapsed % 64;
 
-    uint8_t nextFrame = 0x00;  // default but overridden if inside an EL window
+    uint8_t nextFrame = 0x00; // default but overridden if inside an EL window
 
     if (CYCLE[currentStep].isSeq) {
         for (int i = 0; i < 3; i++) {
-            unsigned long start = elStart(i, CYCLE[currentStep].duration);
+            unsigned long start = elStart(i);
             unsigned long end   = start + EL_TOTAL_US;
 
             if (elapsed >= start && elapsed < end) {
@@ -242,8 +216,6 @@ void loop() {
 
                 unsigned long elElapsed  = elapsed - start;
                 unsigned long elSlot     = elElapsed / 64;
-                unsigned long elTimeInSlot = elElapsed % 64;
-
                 unsigned long nextElSlot = elSlot + 1;
 
                 if ((nextElSlot * 64) < PREAMBLE_US) {
@@ -256,7 +228,7 @@ void loop() {
         }
     }
 
-    // 32µs before slot boundary , send next slot's data
+    // 32µs before slot boundary, send next slot's data
     if (timeInSlot >= 32 && !spiSentForSlot) {
         sendSPI(nextFrame);
         spiSentForSlot = true;
