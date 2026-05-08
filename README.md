@@ -47,6 +47,7 @@ A unified event system handles all fixed-time events — function starts, specia
 
 ## Contributors
 
-- 
-- 
--
+- Theo Poulos
+- Ian Cox
+- Danielle Burton
+- Siena Evers
