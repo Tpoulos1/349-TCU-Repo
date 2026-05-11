@@ -42,7 +42,7 @@ bool          spiSentForSlot  = false;
 bool          evSpiSent       = false;
 int           currentStep     = 0;
 int           k               = 1;     // &&
-int           currentMode     = MODE_EL;
+int           currentMode     = MODE_AZ;
 int           controller_sel  = 0;
 
 unsigned long phaseEvents[MAX_PHASE_EVENTS];
@@ -304,18 +304,15 @@ void buildPhaseEvents() {
 
     if (currentMode == MODE_EL) {
         phaseEvents[numPhaseEvents++] = 3470UL;
-        phaseEvents[numPhaseEvents++] = 3870UL;
         phaseEvents[numPhaseEvents++] = 5664UL;
 
         unsigned long el1 = elStart(1);
         phaseEvents[numPhaseEvents++] = el1;
         phaseEvents[numPhaseEvents++] = el1 + 3406UL;
-        phaseEvents[numPhaseEvents++] = el1 + 3806UL;
         phaseEvents[numPhaseEvents++] = el1 + 5600UL;
 
         phaseEvents[numPhaseEvents++] = 54400UL;
         phaseEvents[numPhaseEvents++] = 54400UL + 3406UL;
-        phaseEvents[numPhaseEvents++] = 54400UL + 3806UL;
         phaseEvents[numPhaseEvents++] = 54400UL + 5600UL;
 
     } else if (currentMode == MODE_AZ) {
@@ -416,8 +413,10 @@ void setup() {
     while (!Serial) delay(10);
     Serial.println("TCU upload successful");
 
-    pinMode(CHIP_SEL, OUTPUT); digitalWrite(CHIP_SEL, HIGH);
-    pinMode(STROBE,   OUTPUT); digitalWrite(STROBE,   LOW);
+    pinMode(CHIP_SEL, OUTPUT); 
+    digitalWrite(CHIP_SEL, HIGH);
+    pinMode(STROBE,   OUTPUT); 
+    digitalWrite(STROBE,   LOW);
     pinMode(SyncIN,   INPUT);
     pinMode(SyncOUT,  OUTPUT);
 
