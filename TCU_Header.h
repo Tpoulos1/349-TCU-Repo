@@ -4,9 +4,14 @@
 #include <Arduino.h>
 #include <SPI.h>
 
-// pin definitions &&
+// pin definitions that USSIM cares about &&
 #define CHIP_SEL  10
 #define STROBE     9
+// SCK = SPI clock
+// MO = MOSI
+// MI = MISO
+
+// TCU sync pins
 #define SyncIN    11
 #define SyncOUT   12
 
@@ -25,6 +30,7 @@
 
 // SEQ1 dataword offsets — same for AZ and BAZ mode
 #define SEQ1_BDW1_START  5600UL
+#define SEQ1_BAZ_BDW1    5600UL
 #define SEQ1_BDW2_START  25900UL   // AZ only
 #define SEQ1_BAZ_BDW2    50000UL   // BAZ only — locked after BAZ ends
 #define SEQ1_BDW3_START  50000UL   // AZ
@@ -65,18 +71,18 @@ extern const uint8_t ADWA1_BITS[];
 extern const Step CYCLE[];
 
 // global state
-extern unsigned long phaseStart;
-extern unsigned long lastSlot;
-extern bool          spiSentForSlot;
-extern bool          evSpiSent;
-extern int           currentStep;
-extern int           k;
-extern int           currentMode;
-extern int           controller_sel;
-extern unsigned long phaseEvents[];
-extern int           numPhaseEvents;
-extern int           nextEventIdx;
-extern volatile unsigned long sequenceStart;
+extern unsigned long phaseStart;      // micros timestamp when current cycle step began
+extern unsigned long lastSlot;        // last slot number that fired a strobe
+extern bool          spiSentForSlot;  // prevents SPI firing twice in the same slot
+extern bool          evSpiSent;       // prevents event SPI firing twice before its strobe
+extern int           currentStep;     // which step in CYCLE we are on 
+extern int           k;               // k constant
+extern int           currentMode;     // MODE_AZ, MODE_EL, or MODE_BAZ
+extern int           controller_sel;  // 0=peripheral 1=controller
+extern unsigned long phaseEvents[];   // sorted list of special strobe times for current step
+extern int           numPhaseEvents;  // how many events are in phaseEvents
+extern int           nextEventIdx;    // index of the next event yet to fire
+extern volatile unsigned long sequenceStart; // micros when sync pulse was received
 
 // function prototypes
 void      sendSPI(uint8_t DATA);
@@ -92,7 +98,6 @@ uint8_t   bazData(unsigned long slot);
 uint8_t   datawordByte(const uint8_t* bits, int numBits, unsigned long slot);
 uint8_t   frameAt(unsigned long elapsed, bool isSeqStep, unsigned long slotSize, uint8_t kBit);
 unsigned long elStart(int n);
-void      regularSlot(uint8_t frame, unsigned long thisSlot, unsigned long timeInSlot,
-                      unsigned long slotSize, bool specialImminent);
+void      regularSlot(uint8_t frame, unsigned long thisSlot, unsigned long timeInSlot, unsigned long slotSize, bool specialImminent);
 
 #endif
