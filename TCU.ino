@@ -81,8 +81,8 @@ void sendSync() {
 // returns when each EL firing starts within a sequence
 unsigned long elStart(int n) {
     if (n == 0) return 0UL;
-    if (n == 1) return EL2_OFFSET_US;  // &&
-    return 54400UL;
+    if (n == 1) return scale(EL2_OFFSET_US);  // &&
+    return scale(54400UL);
 }
 
 // preamble function since preamble is always the same
@@ -130,6 +130,7 @@ uint8_t elData(unsigned long slot) {
 uint8_t azData(unsigned long slot) {
     uint8_t kBit = (k != 1) ? 0x01 : 0x00;
     uint8_t D5   = (0b101 << 1);
+    uint8_t D4   = (0b100 << 1);
     const uint8_t ANT_SEQ[] = {0b001, 0b010, 0b011, 0b000, 0b101};
     uint8_t ant = D5;
     if (slot >= 7 && slot <= 11) {
@@ -145,19 +146,19 @@ uint8_t azData(unsigned long slot) {
         return TXEN | ant | kBit;
     }
     if (slot == 15) {
-        return TXEN | TOFRO | SBSTART | D5 | kBit;
+        return TXEN | TOFRO | SBSTART | D4 | kBit;
     }
     if (slot >= 16 && slot < 112) {
-        return TXEN | SBSTART | D5 | kBit;
+        return TXEN | SBSTART | D4 | kBit;
     }
     if (slot >= 112 && slot < 121) {
         return D5 | kBit;
     }
     if (slot == 121) {
-        return TXEN | TOFRO | SBSTART | D5 | kBit;
+        return TXEN | TOFRO | SBSTART | D4 | kBit;
     }
     if (slot >= 122 && slot < 223) {
-        return TXEN | SBSTART | D5 | kBit;
+        return TXEN | SBSTART | D4 | kBit;
     }
     return D5 | kBit;
 }
@@ -166,6 +167,7 @@ uint8_t azData(unsigned long slot) {
 uint8_t bazData(unsigned long slot) {
     uint8_t kBit = (k != 1) ? 0x01 : 0x00;
     uint8_t D5   = (0b101 << 1);
+    uint8_t D4   = (0b100 << 1);
     const uint8_t ANT_SEQ[] = {0b001, 0b010, 0b011, 0b000, 0b101};
     uint8_t ant = D5;
     if (slot >= 7 && slot <= 11) {
@@ -181,19 +183,19 @@ uint8_t bazData(unsigned long slot) {
         return TXEN | ant | kBit;
     }
     if (slot == 15) {
-        return TXEN | TOFRO | SBSTART | D5 | kBit;
+        return TXEN | TOFRO | SBSTART | D4 | kBit;
     }
     if (slot >= 16 && slot < 80) {
-        return TXEN | SBSTART | D5 | kBit;
+        return TXEN | SBSTART | D4 | kBit;
     }
     if (slot >= 80 && slot < 90) {
         return D5 | kBit;
     }
     if (slot == 90) {
-        return TXEN | TOFRO | SBSTART | D5 | kBit;
+        return TXEN | TOFRO | SBSTART | D4 | kBit;
     }
     if (slot >= 91 && slot < 161) {
-        return TXEN | SBSTART | D5 | kBit;
+        return TXEN | SBSTART | D4 | kBit;
     }
     return D5 | kBit;
 }
@@ -213,7 +215,7 @@ uint8_t datawordByte(const uint8_t* bits, int numBits, unsigned long slot) {
 
 // helper to check if a data word should trigger
 static uint8_t checkDW(unsigned long elapsed, unsigned long start, const uint8_t* bits, int numBits, unsigned long total, unsigned long slotSize) {
-    if (elapsed >= start && elapsed < start + total) {
+    if (elapsed >= start && elapsed < start + scale(total)) {
         unsigned long s = (elapsed - start) / slotSize;
         return datawordByte(bits, numBits, s);
     }
@@ -229,7 +231,7 @@ uint8_t frameAt(unsigned long elapsed, bool isSeqStep, unsigned long slotSize, u
     if (currentMode == MODE_EL) {
         for (int i = 0; i < 3; i++) {
             unsigned long start = elStart(i);
-            if (elapsed >= start && elapsed < start + EL_TOTAL_US) {
+            if (elapsed >= start && elapsed < start + scale(EL_TOTAL_US)) {
                 unsigned long elSlot = (elapsed - start) / slotSize;
                 if (elSlot < PREAMBLE_SLOTS) {
                     return preamble(elSlot);
@@ -243,8 +245,8 @@ uint8_t frameAt(unsigned long elapsed, bool isSeqStep, unsigned long slotSize, u
     if (currentMode == MODE_AZ) {
         bool isSeq1 = (CYCLE[currentStep].duration == 66700UL);
 
-        if (elapsed >= 10000UL && elapsed < 25900UL) {
-            unsigned long azSlot = (elapsed - 10000UL) / slotSize;
+        if (elapsed >= scale(10000UL) && elapsed < scale(25900UL)) {
+            unsigned long azSlot = (elapsed - scale(10000UL)) / slotSize;
             if (azSlot < PREAMBLE_SLOTS) {
                 return preamble(azSlot);
             }
@@ -253,27 +255,27 @@ uint8_t frameAt(unsigned long elapsed, bool isSeqStep, unsigned long slotSize, u
 
         if (isSeq1) {
             uint8_t r;
-            if ((r = checkDW(elapsed, SEQ1_BDW1_START, BDW1_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ1_BDW1_START), BDW1_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize)) != 0xFF) {
                 return r;
             }
-            if ((r = checkDW(elapsed, SEQ1_BDW2_START, BDW2_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ1_BDW2_START), BDW2_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize)) != 0xFF) {
                 return r;
             }
-            if ((r = checkDW(elapsed, SEQ1_BDW3_START, BDW3_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ1_BDW3_START), BDW3_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize)) != 0xFF) {
                 return r;
             }
-            if ((r = checkDW(elapsed, SEQ1_BDW4_START, BDW4_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ1_BDW4_START), BDW4_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize)) != 0xFF) {
                 return r;
             }
         } else {
             uint8_t r;
-            if ((r = checkDW(elapsed, SEQ2_BDW5_START,  BDW5_BITS,  BDW_BITS_COUNT,  BDW_TOTAL_US,  slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ2_BDW5_START),  BDW5_BITS,  BDW_BITS_COUNT,  BDW_TOTAL_US,  slotSize)) != 0xFF) {
                 return r;
             }
-            if ((r = checkDW(elapsed, SEQ2_BDW6_START,  BDW6_BITS,  BDW_BITS_COUNT,  BDW_TOTAL_US,  slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ2_BDW6_START),  BDW6_BITS,  BDW_BITS_COUNT,  BDW_TOTAL_US,  slotSize)) != 0xFF) {
                 return r;
             }
-            if ((r = checkDW(elapsed, SEQ2_ADWA1_START, ADWA1_BITS, ADWA_BITS_COUNT, ADWA_TOTAL_US, slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ2_ADWA1_START), ADWA1_BITS, ADWA_BITS_COUNT, ADWA_TOTAL_US, slotSize)) != 0xFF) {
                 return r;
             }
         }
@@ -284,8 +286,8 @@ uint8_t frameAt(unsigned long elapsed, bool isSeqStep, unsigned long slotSize, u
         bool isSeq1 = (CYCLE[currentStep].duration == 66700UL);
 
         if (isSeq1) {
-            if (elapsed >= 38100UL && elapsed < 50000UL) {
-                unsigned long bazSlot = (elapsed - 38100UL) / slotSize;
+            if (elapsed >= scale(38100UL) && elapsed < scale(50000UL)) {
+                unsigned long bazSlot = (elapsed - scale(38100UL)) / slotSize;
                 if (bazSlot < PREAMBLE_SLOTS) {
                     return preamble(bazSlot);
                 }
@@ -293,27 +295,27 @@ uint8_t frameAt(unsigned long elapsed, bool isSeqStep, unsigned long slotSize, u
             }
 
             uint8_t r;
-            if ((r = checkDW(elapsed, SEQ1_BAZ_BDW1, BDW1_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ1_BAZ_BDW1), BDW1_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize)) != 0xFF) {
                 return r;
             }
-            if ((r = checkDW(elapsed, SEQ1_BAZ_BDW2, BDW2_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ1_BAZ_BDW2), BDW2_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize)) != 0xFF) {
                 return r;
             }
-            if ((r = checkDW(elapsed, SEQ1_BAZ_BDW3, BDW3_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ1_BAZ_BDW3), BDW3_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize)) != 0xFF) {
                 return r;
             }
-            if ((r = checkDW(elapsed, SEQ1_BAZ_BDW4, BDW4_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ1_BAZ_BDW4), BDW4_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize)) != 0xFF) {
                 return r;
             }
         } else {
             uint8_t r;
-            if ((r = checkDW(elapsed, SEQ2_BDW5_START,  BDW5_BITS,  BDW_BITS_COUNT,  BDW_TOTAL_US,  slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ2_BDW5_START),  BDW5_BITS,  BDW_BITS_COUNT,  BDW_TOTAL_US,  slotSize)) != 0xFF) {
                 return r;
             }
-            if ((r = checkDW(elapsed, SEQ2_BDW6_START,  BDW6_BITS,  BDW_BITS_COUNT,  BDW_TOTAL_US,  slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ2_BDW6_START),  BDW6_BITS,  BDW_BITS_COUNT,  BDW_TOTAL_US,  slotSize)) != 0xFF) {
                 return r;
             }
-            if ((r = checkDW(elapsed, SEQ2_ADWA1_START, ADWA1_BITS, ADWA_BITS_COUNT, ADWA_TOTAL_US, slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ2_ADWA1_START), ADWA1_BITS, ADWA_BITS_COUNT, ADWA_TOTAL_US, slotSize)) != 0xFF) {
                 return r;
             }
         }
@@ -359,17 +361,17 @@ void buildPhaseEvents() {
     }
 
     if (currentMode == MODE_EL) {
-        phaseEvents[numPhaseEvents++] = 3470UL;
-        phaseEvents[numPhaseEvents++] = 5664UL;
+        phaseEvents[numPhaseEvents++] = scale(3470UL);
+        phaseEvents[numPhaseEvents++] = scale(5664UL);
 
         unsigned long el1 = elStart(1);
         phaseEvents[numPhaseEvents++] = el1;
-        phaseEvents[numPhaseEvents++] = el1 + 3406UL;
-        phaseEvents[numPhaseEvents++] = el1 + 5600UL;
+        phaseEvents[numPhaseEvents++] = el1 + scale(3406UL);
+        phaseEvents[numPhaseEvents++] = el1 + scale(5600UL);
 
-        phaseEvents[numPhaseEvents++] = 54400UL;
-        phaseEvents[numPhaseEvents++] = 54400UL + 3406UL;
-        phaseEvents[numPhaseEvents++] = 54400UL + 5600UL;
+        phaseEvents[numPhaseEvents++] = scale(54400UL);
+        phaseEvents[numPhaseEvents++] = scale(54400UL) + scale(3406UL);
+        phaseEvents[numPhaseEvents++] = scale(54400UL) + scale(5600UL);
 
     } else if (currentMode == MODE_AZ) {
         bool isSeq1 = (CYCLE[currentStep].duration == 66700UL);
@@ -378,32 +380,32 @@ void buildPhaseEvents() {
         for (int i = 0; i < 3; i++) {
             unsigned long start = elStart(i);
             phaseEvents[numPhaseEvents++] = start;
-            phaseEvents[numPhaseEvents++] = start + EL_TOTAL_US;
+            phaseEvents[numPhaseEvents++] = start + scale(EL_TOTAL_US);
         }
 
         // AZ special strobes
-        phaseEvents[numPhaseEvents++] = 10000UL;
-        phaseEvents[numPhaseEvents++] = 10000UL + 8760UL;
-        phaseEvents[numPhaseEvents++] = 10000UL + 9360UL;
-        phaseEvents[numPhaseEvents++] = 10000UL + 15900UL;
+        phaseEvents[numPhaseEvents++] = scale(10000UL);
+        phaseEvents[numPhaseEvents++] = scale(10000UL) + scale(8760UL);
+        phaseEvents[numPhaseEvents++] = scale(10000UL) + scale(9360UL);
+        phaseEvents[numPhaseEvents++] = scale(10000UL) + scale(15900UL);
 
         // dataword boundaries
         if (isSeq1) {
-            phaseEvents[numPhaseEvents++] = SEQ1_BDW1_START;
-            phaseEvents[numPhaseEvents++] = SEQ1_BDW1_START + BDW_TOTAL_US;
-            phaseEvents[numPhaseEvents++] = SEQ1_BDW2_START;
-            phaseEvents[numPhaseEvents++] = SEQ1_BDW2_START + BDW_TOTAL_US;
-            phaseEvents[numPhaseEvents++] = SEQ1_BDW3_START;
-            phaseEvents[numPhaseEvents++] = SEQ1_BDW3_START + BDW_TOTAL_US;
-            phaseEvents[numPhaseEvents++] = SEQ1_BDW4_START;
-            phaseEvents[numPhaseEvents++] = SEQ1_BDW4_START + BDW_TOTAL_US;
+            phaseEvents[numPhaseEvents++] = scale(SEQ1_BDW1_START);
+            phaseEvents[numPhaseEvents++] = scale(SEQ1_BDW1_START) + scale(BDW_TOTAL_US);
+            phaseEvents[numPhaseEvents++] = scale(SEQ1_BDW2_START);
+            phaseEvents[numPhaseEvents++] = scale(SEQ1_BDW2_START) + scale(BDW_TOTAL_US);
+            phaseEvents[numPhaseEvents++] = scale(SEQ1_BDW3_START);
+            phaseEvents[numPhaseEvents++] = scale(SEQ1_BDW3_START) + scale(BDW_TOTAL_US);
+            phaseEvents[numPhaseEvents++] = scale(SEQ1_BDW4_START);
+            phaseEvents[numPhaseEvents++] = scale(SEQ1_BDW4_START) + scale(BDW_TOTAL_US);
         } else {
-            phaseEvents[numPhaseEvents++] = SEQ2_BDW5_START;
-            phaseEvents[numPhaseEvents++] = SEQ2_BDW5_START + BDW_TOTAL_US;
-            phaseEvents[numPhaseEvents++] = SEQ2_BDW6_START;
-            phaseEvents[numPhaseEvents++] = SEQ2_BDW6_START + BDW_TOTAL_US;
-            phaseEvents[numPhaseEvents++] = SEQ2_ADWA1_START;
-            phaseEvents[numPhaseEvents++] = SEQ2_ADWA1_START + ADWA_TOTAL_US;
+            phaseEvents[numPhaseEvents++] = scale(SEQ2_BDW5_START);
+            phaseEvents[numPhaseEvents++] = scale(SEQ2_BDW5_START) + scale(BDW_TOTAL_US);
+            phaseEvents[numPhaseEvents++] = scale(SEQ2_BDW6_START);
+            phaseEvents[numPhaseEvents++] = scale(SEQ2_BDW6_START) + scale(BDW_TOTAL_US);
+            phaseEvents[numPhaseEvents++] = scale(SEQ2_ADWA1_START);
+            phaseEvents[numPhaseEvents++] = scale(SEQ2_ADWA1_START) + scale(ADWA_TOTAL_US);
         }
 
     } else if (currentMode == MODE_BAZ) {
@@ -414,38 +416,38 @@ void buildPhaseEvents() {
             for (int i = 0; i < 3; i++) {
                 unsigned long start = elStart(i);
                 phaseEvents[numPhaseEvents++] = start;
-                phaseEvents[numPhaseEvents++] = start + EL_TOTAL_US;
+                phaseEvents[numPhaseEvents++] = start + scale(EL_TOTAL_US);
             }
 
             // AZ special strobes
-            phaseEvents[numPhaseEvents++] = 10000UL;
-            phaseEvents[numPhaseEvents++] = 10000UL + 8760UL;
-            phaseEvents[numPhaseEvents++] = 10000UL + 9360UL;
-            phaseEvents[numPhaseEvents++] = 10000UL + 15900UL;
+            phaseEvents[numPhaseEvents++] = scale(10000UL);
+            phaseEvents[numPhaseEvents++] = scale(10000UL) + scale(8760UL);
+            phaseEvents[numPhaseEvents++] = scale(10000UL) + scale(9360UL);
+            phaseEvents[numPhaseEvents++] = scale(10000UL) + scale(15900UL);
 
             // BAZ special strobes
-            phaseEvents[numPhaseEvents++] = 38100UL;
-            phaseEvents[numPhaseEvents++] = 38100UL + 6760UL;
-            phaseEvents[numPhaseEvents++] = 38100UL + 7360UL;
-            phaseEvents[numPhaseEvents++] = 38100UL + 11900UL;
+            phaseEvents[numPhaseEvents++] = scale(38100UL);
+            phaseEvents[numPhaseEvents++] = scale(38100UL) + scale(6760UL);
+            phaseEvents[numPhaseEvents++] = scale(38100UL) + scale(7360UL);
+            phaseEvents[numPhaseEvents++] = scale(38100UL) + scale(11900UL);
 
             // BAZ dataword boundaries
-            phaseEvents[numPhaseEvents++] = SEQ1_BDW1_START;
-            phaseEvents[numPhaseEvents++] = SEQ1_BDW1_START + BDW_TOTAL_US;
-            phaseEvents[numPhaseEvents++] = SEQ1_BAZ_BDW2;
-            phaseEvents[numPhaseEvents++] = SEQ1_BAZ_BDW2 + BDW_TOTAL_US;
-            phaseEvents[numPhaseEvents++] = SEQ1_BAZ_BDW3;
-            phaseEvents[numPhaseEvents++] = SEQ1_BAZ_BDW3 + BDW_TOTAL_US;
-            phaseEvents[numPhaseEvents++] = SEQ1_BAZ_BDW4;
-            phaseEvents[numPhaseEvents++] = SEQ1_BAZ_BDW4 + BDW_TOTAL_US;
+            phaseEvents[numPhaseEvents++] = scale(SEQ1_BDW1_START);
+            phaseEvents[numPhaseEvents++] = scale(SEQ1_BDW1_START) + scale(BDW_TOTAL_US);
+            phaseEvents[numPhaseEvents++] = scale(SEQ1_BAZ_BDW2);
+            phaseEvents[numPhaseEvents++] = scale(SEQ1_BAZ_BDW2) + scale(BDW_TOTAL_US);
+            phaseEvents[numPhaseEvents++] = scale(SEQ1_BAZ_BDW3);
+            phaseEvents[numPhaseEvents++] = scale(SEQ1_BAZ_BDW3) + scale(BDW_TOTAL_US);
+            phaseEvents[numPhaseEvents++] = scale(SEQ1_BAZ_BDW4);
+            phaseEvents[numPhaseEvents++] = scale(SEQ1_BAZ_BDW4) + scale(BDW_TOTAL_US);
         } else {
             // SEQ2 same as AZ
-            phaseEvents[numPhaseEvents++] = SEQ2_BDW5_START;
-            phaseEvents[numPhaseEvents++] = SEQ2_BDW5_START + BDW_TOTAL_US;
-            phaseEvents[numPhaseEvents++] = SEQ2_BDW6_START;
-            phaseEvents[numPhaseEvents++] = SEQ2_BDW6_START + BDW_TOTAL_US;
-            phaseEvents[numPhaseEvents++] = SEQ2_ADWA1_START;
-            phaseEvents[numPhaseEvents++] = SEQ2_ADWA1_START + ADWA_TOTAL_US;
+            phaseEvents[numPhaseEvents++] = scale(SEQ2_BDW5_START);
+            phaseEvents[numPhaseEvents++] = scale(SEQ2_BDW5_START) + scale(BDW_TOTAL_US);
+            phaseEvents[numPhaseEvents++] = scale(SEQ2_BDW6_START);
+            phaseEvents[numPhaseEvents++] = scale(SEQ2_BDW6_START) + scale(BDW_TOTAL_US);
+            phaseEvents[numPhaseEvents++] = scale(SEQ2_ADWA1_START);
+            phaseEvents[numPhaseEvents++] = scale(SEQ2_ADWA1_START) + scale(ADWA_TOTAL_US);
         }
     }
 

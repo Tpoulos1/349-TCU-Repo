@@ -84,6 +84,11 @@ extern int           numPhaseEvents;  // how many events are in phaseEvents
 extern int           nextEventIdx;    // index of the next event yet to fire
 extern volatile unsigned long sequenceStart; // micros when sync pulse was received
 
+// scales a microsecond value by k. Set as inline so the compiler directly substitutes the function code in to remove overhead timing delays
+inline unsigned long scale(unsigned long us) {
+    return us * (unsigned long)k;
+}
+
 // function prototypes
 void      sendSPI(uint8_t DATA);
 void      strobeNow();
