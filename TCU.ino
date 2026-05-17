@@ -8,12 +8,30 @@ const uint8_t DPSK_BARKER[] = {1, 0, 1, 1, 0};
 
 // pre-encoded DPSK bit arrays for datawords
 const uint8_t BDW1_BITS[]  = {1,1,0,1,0,1,1,1,1,0,1,0,1,0,1,0,1,0,1,0};
-const uint8_t BDW2_BITS[]  = {1,1,1,1,1,0,1,1,1,0,0,0,1,1,0,0,0,1,1,1};
+const uint8_t BDW2_BITS[]  = {1,1,1,1,1,0,1,1,1,0,0,0,1,1,0,0,0,1,1,1}; 
 const uint8_t BDW3_BITS[]  = {1,0,1,1,1,0,0,1,0,0,1,1,0,1,1,0,1,1,1,1};
 const uint8_t BDW4_BITS[]  = {1,0,1,0,0,0,1,1,0,1,0,0,0,1,1,0,0,1,1,0};
 const uint8_t BDW5_BITS[]  = {0,1,0,1,1,1,0,1,1,0,1,1,0,0,0,1,0,0,1,1};
 const uint8_t BDW6_BITS[]  = {1,1,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,0,1,1};
 const uint8_t ADWA1_BITS[] = {0,0,0,0,1,0,1,0,1,1,1,0,1,1,0,0,0,0,0,0,0,0,1,0,1,1,1,0,1,0,1,0,1,0,1,0,1,1,1,0,0,0,0,1,1,0,1,1,1,1,0,1,1,1,0,1,0,1,1,1,1,1,1,1};
+
+// function IDs for main functions 
+const uint8_t FUNC_IDS[3][7] = {
+    {0,0,1,0,0,0,1}, // AZ
+    {1,0,0,0,0,0,1}, // EL
+    {1,1,1,0,0,0,1}, // BAZ
+};
+
+// function IDs for datawords 
+const uint8_t DW_FUNC_IDS[7][7] = {
+    {0,1,1,0,0,0,0}, // BDW1
+    {0,1,0,1,0,1,1}, // BDW2
+    {1,1,0,0,0,0,0}, // BDW3
+    {1,1,1,1,0,0,0}, // BDW4
+    {1,0,0,1,0,0,0}, // BDW5
+    {0,0,0,1,0,1,0}, // BDW6
+    {1,0,1,1,0,1,1}, // ADWA1
+};
 
 // full repeating cycle of sequences and gaps
 const Step CYCLE[CYCLE_LEN] = {
@@ -43,7 +61,7 @@ bool          evSpiSent       = false;
 int           currentStep     = 0;
 int           k               = 1;     // &&
 int           currentMode     = MODE_EL;
-int           controller_sel  = 0;
+int           controller_sel  = 1;
 
 unsigned long phaseEvents[MAX_PHASE_EVENTS];
 int           numPhaseEvents  = 0;
@@ -86,11 +104,15 @@ unsigned long elStart(int n) {
 }
 
 // preamble function since preamble is always the same
-uint8_t preamble(unsigned long slot) {
+uint8_t preamble(unsigned long slot, const uint8_t* funcId) {
     uint8_t kBit = (k != 1) ? 0x01 : 0x00;
     uint8_t D5   = (0b101 << 1);
     if (slot >= 13 && slot <= 17) {
         return TXEN | (uint8_t)(DPSK_BARKER[slot - 13] << 6) | kBit;
+    }
+    if (slot >= 18 && slot <= 24) {
+        const uint8_t* id = funcId ? funcId : FUNC_IDS[currentMode];
+        return TXEN | (uint8_t)(id[slot - 18] << 6) | kBit;
     }
     return TXEN | D5 | kBit;
 }
@@ -201,10 +223,10 @@ uint8_t bazData(unsigned long slot) {
 }
 
 // dataword byte builder based on slot
-uint8_t datawordByte(const uint8_t* bits, int numBits, unsigned long slot) {
+uint8_t datawordByte(const uint8_t* bits, int numBits, unsigned long slot, int dwIndex) {
     uint8_t kBit = (k != 1) ? 0x01 : 0x00;
     if (slot < PREAMBLE_SLOTS) {
-        return preamble(slot);
+        return preamble(slot, DW_FUNC_IDS[dwIndex]);
     }
     unsigned long dataSlot = slot - PREAMBLE_SLOTS;
     if (dataSlot >= (unsigned long)numBits) {
@@ -214,10 +236,10 @@ uint8_t datawordByte(const uint8_t* bits, int numBits, unsigned long slot) {
 }
 
 // helper to check if a data word should trigger
-static uint8_t checkDW(unsigned long elapsed, unsigned long start, const uint8_t* bits, int numBits, unsigned long total, unsigned long slotSize) {
+static uint8_t checkDW(unsigned long elapsed, unsigned long start, const uint8_t* bits, int numBits, unsigned long total, unsigned long slotSize, int dwIndex) {
     if (elapsed >= start && elapsed < start + scale(total)) {
         unsigned long s = (elapsed - start) / slotSize;
-        return datawordByte(bits, numBits, s);
+        return datawordByte(bits, numBits, s, dwIndex);
     }
     return 0xFF; 
 }
@@ -255,27 +277,27 @@ uint8_t frameAt(unsigned long elapsed, bool isSeqStep, unsigned long slotSize, u
 
         if (isSeq1) {
             uint8_t r;
-            if ((r = checkDW(elapsed, scale(SEQ1_BDW1_START), BDW1_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ1_BDW1_START), BDW1_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize, 0)) != 0xFF) {
                 return r;
             }
-            if ((r = checkDW(elapsed, scale(SEQ1_BDW2_START), BDW2_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ1_BDW2_START), BDW2_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize, 1)) != 0xFF) {
                 return r;
             }
-            if ((r = checkDW(elapsed, scale(SEQ1_BDW3_START), BDW3_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ1_BDW3_START), BDW3_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize, 2)) != 0xFF) {
                 return r;
             }
-            if ((r = checkDW(elapsed, scale(SEQ1_BDW4_START), BDW4_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ1_BDW4_START), BDW4_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize, 3)) != 0xFF) {
                 return r;
             }
         } else {
             uint8_t r;
-            if ((r = checkDW(elapsed, scale(SEQ2_BDW5_START),  BDW5_BITS,  BDW_BITS_COUNT,  BDW_TOTAL_US,  slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ2_BDW5_START),  BDW5_BITS,  BDW_BITS_COUNT,  BDW_TOTAL_US,  slotSize, 4)) != 0xFF) {
                 return r;
             }
-            if ((r = checkDW(elapsed, scale(SEQ2_BDW6_START),  BDW6_BITS,  BDW_BITS_COUNT,  BDW_TOTAL_US,  slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ2_BDW6_START),  BDW6_BITS,  BDW_BITS_COUNT,  BDW_TOTAL_US,  slotSize, 5)) != 0xFF) {
                 return r;
             }
-            if ((r = checkDW(elapsed, scale(SEQ2_ADWA1_START), ADWA1_BITS, ADWA_BITS_COUNT, ADWA_TOTAL_US, slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ2_ADWA1_START), ADWA1_BITS, ADWA_BITS_COUNT, ADWA_TOTAL_US, slotSize, 6)) != 0xFF) {
                 return r;
             }
         }
@@ -295,27 +317,27 @@ uint8_t frameAt(unsigned long elapsed, bool isSeqStep, unsigned long slotSize, u
             }
 
             uint8_t r;
-            if ((r = checkDW(elapsed, scale(SEQ1_BAZ_BDW1), BDW1_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ1_BAZ_BDW1), BDW1_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize, 0)) != 0xFF) {
                 return r;
             }
-            if ((r = checkDW(elapsed, scale(SEQ1_BAZ_BDW2), BDW2_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ1_BAZ_BDW2), BDW2_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize, 1)) != 0xFF) {
                 return r;
             }
-            if ((r = checkDW(elapsed, scale(SEQ1_BAZ_BDW3), BDW3_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ1_BAZ_BDW3), BDW3_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize, 2)) != 0xFF) {
                 return r;
             }
-            if ((r = checkDW(elapsed, scale(SEQ1_BAZ_BDW4), BDW4_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ1_BAZ_BDW4), BDW4_BITS, BDW_BITS_COUNT, BDW_TOTAL_US, slotSize, 3)) != 0xFF) {
                 return r;
             }
         } else {
             uint8_t r;
-            if ((r = checkDW(elapsed, scale(SEQ2_BDW5_START),  BDW5_BITS,  BDW_BITS_COUNT,  BDW_TOTAL_US,  slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ2_BDW5_START),  BDW5_BITS,  BDW_BITS_COUNT,  BDW_TOTAL_US,  slotSize, 4)) != 0xFF) {
                 return r;
             }
-            if ((r = checkDW(elapsed, scale(SEQ2_BDW6_START),  BDW6_BITS,  BDW_BITS_COUNT,  BDW_TOTAL_US,  slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ2_BDW6_START),  BDW6_BITS,  BDW_BITS_COUNT,  BDW_TOTAL_US,  slotSize, 5)) != 0xFF) {
                 return r;
             }
-            if ((r = checkDW(elapsed, scale(SEQ2_ADWA1_START), ADWA1_BITS, ADWA_BITS_COUNT, ADWA_TOTAL_US, slotSize)) != 0xFF) {
+            if ((r = checkDW(elapsed, scale(SEQ2_ADWA1_START), ADWA1_BITS, ADWA_BITS_COUNT, ADWA_TOTAL_US, slotSize, 6)) != 0xFF) {
                 return r;
             }
         }
@@ -495,9 +517,9 @@ void loop() {
     unsigned long slotSize = 64UL * (unsigned long)k;
     uint8_t       kBit     = (k != 1) ? 0x01 : 0x00;
 
-    if (elapsed >= CYCLE[currentStep].duration) {
-        advancePhase();
-        return;
+    if (elapsed >= CYCLE[currentStep].duration * (unsigned long)k) {
+    advancePhase();
+    return;
     }
 
     unsigned long thisSlot   = elapsed / slotSize;

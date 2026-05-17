@@ -68,6 +68,8 @@ extern const uint8_t BDW4_BITS[];
 extern const uint8_t BDW5_BITS[];
 extern const uint8_t BDW6_BITS[];
 extern const uint8_t ADWA1_BITS[];
+extern const uint8_t FUNC_IDS[3][7];
+extern const uint8_t DW_FUNC_IDS[7][7];
 extern const Step CYCLE[];
 
 // global state
@@ -84,7 +86,7 @@ extern int           numPhaseEvents;  // how many events are in phaseEvents
 extern int           nextEventIdx;    // index of the next event yet to fire
 extern volatile unsigned long sequenceStart; // micros when sync pulse was received
 
-// scales a microsecond value by k. Set as inline so the compiler directly substitutes the function code in to remove overhead timing delays
+// scales a microsecond value by k — all timing stretches proportionally with k
 inline unsigned long scale(unsigned long us) {
     return us * (unsigned long)k;
 }
@@ -96,11 +98,11 @@ void      sendSync();
 void      onSyncReceived();
 void      advancePhase();
 void      buildPhaseEvents();
-uint8_t   preamble(unsigned long slot);
+uint8_t   preamble(unsigned long slot, const uint8_t* funcId = nullptr);
 uint8_t   elData(unsigned long slot);
 uint8_t   azData(unsigned long slot);
 uint8_t   bazData(unsigned long slot);
-uint8_t   datawordByte(const uint8_t* bits, int numBits, unsigned long slot);
+uint8_t   datawordByte(const uint8_t* bits, int numBits, unsigned long slot, int dwIndex);
 uint8_t   frameAt(unsigned long elapsed, bool isSeqStep, unsigned long slotSize, uint8_t kBit);
 unsigned long elStart(int n);
 void      regularSlot(uint8_t frame, unsigned long thisSlot, unsigned long timeInSlot, unsigned long slotSize, bool specialImminent);
